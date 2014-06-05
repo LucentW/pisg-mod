@@ -515,6 +515,78 @@ sub _activetimes
     if($self->{cfg}->{showlegend} == 1) {
         $self->_legend();
     }
+    
+    $self->_activetimes_udist();
+}
+
+sub _activetimes_udist
+{
+    # The most estimated actives times on the channel
+    my $self = shift;
+
+    my (%output);
+
+    $self->_headline($self->_template_text('activetimestopic'));
+
+    my @toptime = sort { $self->{stats}->{times}{$b} <=> $self->{stats}->{times}{$a} } keys %{ $self->{stats}->{times} };
+
+    my $highest_value = $self->{stats}->{times}{$toptime[0]};
+	my $xi2 = 0;
+	my $xi = 0;
+	my $n = 0; 
+
+    for my $hour (sort keys %{ $self->{stats}->{times} }) {
+		$xi += $self->{stats}->{times}{$hour}*$hour;
+		$xi2 += ($self->{stats}->{times}{$hour}*$hour)*($self->{stats}->{times}{$hour}*$hour);
+		$n += $self->{stats}->{times}{$hour};
+    }
+    
+    my $mean = $xi/$n;
+    my $rms = 1/$n * sqrt($n*$xi2 - $xi*$xi);
+    my $highest_udist = _udist(0) - _udist(-1/$rms);
+    
+    for ($b = 0; $b < 24; $b++) {
+    	my $prob = _udist( ($b - $mean)/$rms ) - _udist( ($b - 1 - $mean)/$rms );
+    	my $xipi = $prob * $b;
+    	
+    	my $size = int(($xipi / $highest_udist) * 100);
+        my $percent = sprintf("%.1f", $prob * 100);
+        my $lines_per_hour = int($xipi);
+
+        my $image = "pic_v_".(int($hour/6)*6);
+        $image = $self->{cfg}->{$image};
+
+        $output{$hour} = "<td align=\"center\" valign=\"bottom\" class=\"asmall\">$percent%<br /><img src=\"$self->{cfg}->{piclocation}/$image\" width=\"15\" height=\"$size\" alt=\"$lines_per_hour\" title=\"$lines_per_hour\"/></td>" if $size;
+    }
+
+    _html("<table border=\"0\"><tr>");
+
+    for ($b = 0; $b < 24; $b++) {
+        $a = sprintf("%02d", $b);
+
+        if (!defined($output{$a})) {
+            _html("<td align=\"center\" valign=\"bottom\" class=\"asmall\">0%</td>");
+        } else {
+            _html($output{$a});
+        }
+    }
+
+    _html("</tr><tr>");
+
+    # Remove leading zero
+    $toptime[0] =~ s/^0//;
+
+    for ($b = 0; $b < 24; $b++) {
+        # Highlight the top time
+        my $class = $toptime[0] == $b ? 'hirankc10center' : 'rankc10center';
+        _html("<td class=\"$class\" align=\"center\">$b</td>");
+    }
+
+    _html("</tr></table>");
+
+    if($self->{cfg}->{showlegend} == 1) {
+        $self->_legend();
+    }
 }
 
 sub _activenicks
@@ -2484,6 +2556,25 @@ sub _activegenders {
     }
 
     _html("</tr></table>");
+}
+
+sub _subu {
+	my ($p) = @_;
+	my $y = -log(4 * $p * (1 - $p));
+	my $x = sqrt(
+		$y * (1.570796288
+		  + $y * (.03706987906
+		  	+ $y * (-.8364353589E-3
+			  + $y *(-.2250947176E-3
+			  	+ $y * (.6841218299E-5
+				  + $y * (0.5824238515E-5
+					+ $y * (-.104527497E-5
+					  + $y * (.8360937017E-7
+						+ $y * (-.3231081277E-8
+						  + $y * (.3657763036E-10
+							+ $y *.6936233982E-12)))))))))));
+	$x = -$x if ($p>.5);
+	return $x;
 }
 
 1;
