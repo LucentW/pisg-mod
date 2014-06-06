@@ -516,18 +516,19 @@ sub _activetimes
         $self->_legend();
     }
     
-    $self->_activetimes_udist();
+    $self->_activetimes_subuprob();
 }
 
-sub _activetimes_udist
+sub _activetimes_subuprob
 {
     # The most estimated actives times on the channel
     my $self = shift;
 
     my (%output);
 
-    $self->_headline($self->_template_text('activetimestopic'));
-
+    # $self->_headline($self->_template_text('activetimestopic'));
+	$self->_headline("Estimated active times");
+	
     my @toptime = sort { $self->{stats}->{times}{$b} <=> $self->{stats}->{times}{$a} } keys %{ $self->{stats}->{times} };
 
     my $highest_value = $self->{stats}->{times}{$toptime[0]};
@@ -543,13 +544,16 @@ sub _activetimes_udist
     
     my $mean = $xi/$n;
     my $rms = 1/$n * sqrt($n*$xi2 - $xi*$xi);
-    my $highest_udist = _udist(0) - _udist(-1/$rms);
+    my $highest_subudist = _subuprob(0) - _subuprob(-1/$rms);
     
     for ($b = 0; $b < 24; $b++) {
-    	my $prob = _udist( ($b - $mean)/$rms ) - _udist( ($b - 1 - $mean)/$rms );
+		my $hour = $b;
+		if($b == 0) $b = 24; # HACK: 00:00 -> 24:00
+		
+    	my $prob = _subuprob( ($b - $mean)/$rms ) - _subuprob( ($b - 1 - $mean)/$rms );
     	my $xipi = $prob * $b;
     	
-    	my $size = int(($xipi / $highest_udist) * 100);
+    	my $size = int(($xipi / $highest_subudist) * 100);
         my $percent = sprintf("%.1f", $prob * 100);
         my $lines_per_hour = int($xipi);
 
@@ -557,7 +561,8 @@ sub _activetimes_udist
         $image = $self->{cfg}->{$image};
 
         $output{$hour} = "<td align=\"center\" valign=\"bottom\" class=\"asmall\">$percent%<br /><img src=\"$self->{cfg}->{piclocation}/$image\" width=\"15\" height=\"$size\" alt=\"$lines_per_hour\" title=\"$lines_per_hour\"/></td>" if $size;
-    }
+		if($b == 24) $b = 0; # HACK: 00:00 -> 24:00
+	}
 
     _html("<table border=\"0\"><tr>");
 
@@ -578,8 +583,9 @@ sub _activetimes_udist
 
     for ($b = 0; $b < 24; $b++) {
         # Highlight the top time
-        my $class = $toptime[0] == $b ? 'hirankc10center' : 'rankc10center';
-        _html("<td class=\"$class\" align=\"center\">$b</td>");
+        # FIXME: my $class = $toptime[0] == $b ? 'hirankc10center' : 'rankc10center';
+        my $class = "rankc10center";
+		_html("<td class=\"$class\" align=\"center\">$b</td>");
     }
 
     _html("</tr></table>");
@@ -2558,24 +2564,34 @@ sub _activegenders {
     _html("</tr></table>");
 }
 
-sub _subu {
-	my ($p) = @_;
-	my $y = -log(4 * $p * (1 - $p));
-	my $x = sqrt(
-		$y * (1.570796288
-		  + $y * (.03706987906
-		  	+ $y * (-.8364353589E-3
-			  + $y *(-.2250947176E-3
-			  	+ $y * (.6841218299E-5
-				  + $y * (0.5824238515E-5
-					+ $y * (-.104527497E-5
-					  + $y * (.8360937017E-7
-						+ $y * (-.3231081277E-8
-						  + $y * (.3657763036E-10
-							+ $y *.6936233982E-12)))))))))));
-	$x = -$x if ($p>.5);
-	return $x;
+# Copypasted from Statistics::Distribution
+# http://search.cpan.org/~mikek/Statistics-Distributions-1.02/Distributions.pm
+# patched to represent the left part of the graph
+sub _subuprob {
+	my ($x) = @_;
+	my $p = 0; # if ($absx > 100)
+	my $absx = abs($x);
+
+	if ($absx < 1.9) {
+		$p = (1 +
+			$absx * (.049867347
+			  + $absx * (.0211410061
+			  	+ $absx * (.0032776263
+				  + $absx * (.0000380036
+					+ $absx * (.0000488906
+					  + $absx * .000005383)))))) ** -16/2;
+	} elsif ($absx <= 100) {
+		for (my $i = 18; $i >= 1; $i--) {
+			$p = $i / ($absx + $p);
+		}
+		$p = exp(-.5 * $absx * $absx) 
+			/ sqrt(2 * PI) / ($absx + $p);
+	}
+
+	$p = 1 - $p if ($x>0); # HACK: P(X <= x)
+	return $p;
 }
+
 
 1;
 
