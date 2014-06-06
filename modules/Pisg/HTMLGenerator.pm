@@ -1,4 +1,5 @@
 package Pisg::HTMLGenerator;
+use constant PI => 3.1415926536;
 
 # $Id: HTMLGenerator.pm,v 1.189 2007/09/07 23:17:23 df7cb Exp $
 #
@@ -538,41 +539,40 @@ sub _activetimes_subuprob
 
     for my $hour (sort keys %{ $self->{stats}->{times} }) {
 		$xi += $self->{stats}->{times}{$hour}*$hour;
-		$xi2 += ($self->{stats}->{times}{$hour}*$hour)*($self->{stats}->{times}{$hour}*$hour);
+		$xi2 += ($self->{stats}->{times}{$hour}*$hour)^2;
 		$n += $self->{stats}->{times}{$hour};
     }
     
-    my $mean = $xi/$n;
-    my $rms = 1/$n * sqrt($n*$xi2 - $xi*$xi);
-    my $highest_subudist = _subuprob(0) - _subuprob(-1/$rms);
+    my $mean = $xi/$n;  
+    my $rms = 1/$n * sqrt( ($n*$xi2) - ($xi^2) );
+    
+    my $highest_subudist_prob = _subuprob(0) - _subuprob(-1/$rms);
+    my $highest_subudist = int($highest_subudist_prob*$n);
     
     for ($b = 0; $b < 24; $b++) {
 		my $hour = $b;
-		if($b == 0) $b = 24; # HACK: 00:00 -> 24:00
+		if($b == 0) { $b = 24; } # HACK: 00:00 -> 24:00
 		
-    	my $prob = _subuprob( ($b - $mean)/$rms ) - _subuprob( ($b - 1 - $mean)/$rms );
-    	my $xipi = $prob * $b;
-    	
-    	my $size = int(($xipi / $highest_subudist) * 100);
+    	my $prob = _subuprob(($b - $mean)/$rms) - _subuprob(($b - 1 - $mean)/$rms);
+    	my $xipi = int($prob * $n);
+    	my $size = int(($prob / $highest_subudist_prob)*100);
         my $percent = sprintf("%.1f", $prob * 100);
-        my $lines_per_hour = int($xipi);
 
         my $image = "pic_v_".(int($hour/6)*6);
         $image = $self->{cfg}->{$image};
 
-        $output{$hour} = "<td align=\"center\" valign=\"bottom\" class=\"asmall\">$percent%<br /><img src=\"$self->{cfg}->{piclocation}/$image\" width=\"15\" height=\"$size\" alt=\"$lines_per_hour\" title=\"$lines_per_hour\"/></td>" if $size;
-		if($b == 24) $b = 0; # HACK: 00:00 -> 24:00
+        $output{$hour} = "<td align=\"center\" valign=\"bottom\" class=\"asmall\">$percent%<br /><img src=\"$self->{cfg}->{piclocation}/$image\" width=\"15\" height=\"$size\" alt=\"$xipi\" title=\"$xipi\"/></td>" if $size;
+		
+		if($b == 24) { $b = 0; } # HACK: 00:00 -> 24:00
 	}
 
     _html("<table border=\"0\"><tr>");
 
     for ($b = 0; $b < 24; $b++) {
-        $a = sprintf("%02d", $b);
-
-        if (!defined($output{$a})) {
+        if (!defined($output{$b})) {
             _html("<td align=\"center\" valign=\"bottom\" class=\"asmall\">0%</td>");
         } else {
-            _html($output{$a});
+            _html($output{$b});
         }
     }
 
