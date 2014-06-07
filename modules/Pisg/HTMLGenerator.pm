@@ -1,5 +1,6 @@
 package Pisg::HTMLGenerator;
 use constant PI => 3.1415926536;
+use constant E => 2.718281828;
 
 # $Id: HTMLGenerator.pm,v 1.189 2007/09/07 23:17:23 df7cb Exp $
 #
@@ -527,25 +528,26 @@ sub _activetimes_subuprob
 
     my (%output);
 
-    # $self->_headline($self->_template_text('activetimestopic'));
-	$self->_headline("Estimated active times");
-	
-    my @toptime = sort { $self->{stats}->{times}{$b} <=> $self->{stats}->{times}{$a} } keys %{ $self->{stats}->{times} };
+    # FIXME: $self->_headline($self->_template_text('activetimestopic'));
+	$self->_headline("Estimated active times (normal distribution)");
 
-    my $highest_value = $self->{stats}->{times}{$toptime[0]};
-	my $xi2 = 0;
 	my $xi = 0;
 	my $n = 0; 
 
     for my $hour (sort keys %{ $self->{stats}->{times} }) {
-		$xi += $self->{stats}->{times}{$hour}*$hour;
-		$xi2 += ($self->{stats}->{times}{$hour}*$hour)^2;
+		$xi += $self->{stats}->{times}{$hour}*$hour;		
 		$n += $self->{stats}->{times}{$hour};
     }
     
-    my $mean = $xi/$n;  
-    my $rms = 1/$n * sqrt( ($n*$xi2) - ($xi^2) );
+    my $mean = $xi/$n;
     
+    my $weightedbias = 0;
+    for my $hour (sort keys %{ $self->{stats}->{times} }) {
+    	$weightedbias += $self->{stats}->{times}{$hour} * (($hour - $mean) ** 2);
+    }
+        
+    my $rms = sqrt($weightedbias/$n);
+
     my $highest_subudist_prob = _subuprob(0) - _subuprob(-1/$rms);
     my $highest_subudist = int($highest_subudist_prob*$n);
     
@@ -579,7 +581,7 @@ sub _activetimes_subuprob
     _html("</tr><tr>");
 
     # Remove leading zero
-    $toptime[0] =~ s/^0//;
+    #$toptime[0] =~ s/^0//;
 
     for ($b = 0; $b < 24; $b++) {
         # Highlight the top time
@@ -593,6 +595,141 @@ sub _activetimes_subuprob
     if($self->{cfg}->{showlegend} == 1) {
         $self->_legend();
     }
+    
+	$self->_activetimes_uniformdist();
+}
+
+sub _activetimes_uniformdist
+{
+    # The most actives times on the channel
+    my $self = shift;
+
+    my (%output);
+
+	# FIXME: $self->_headline($self->_template_text('activetimestopic'));
+    $self->_headline("Estimated active times (uniform distribution)");
+
+    my $ok_hours = 0;
+    my $n = 0;
+    my $ctr = 0;
+    my $lowest_percentage = 100;
+        
+    for my $hour (sort keys %{ $self->{stats}->{times} }) {
+        my $percent = int(($self->{stats}->{times}{$hour} / $self->{stats}->{parsedlines}) * 100);
+		$n += $self->{stats}->{times}{$hour};
+		
+		if ($percent < $lowest_percentage && $percent > 0) {
+			$lowest_percentage = $percent;
+		}
+    }
+        
+    for my $hour (sort keys %{ $self->{stats}->{times} }) {
+        my $percent = ($self->{stats}->{times}{$hour} / $self->{stats}->{parsedlines}) * 100;
+		
+		if ($percent > $lowest_percentage) {
+			$ok_hours++;
+        	$output{$ctr} = "k";
+    	}
+    	$ctr++;
+    }
+
+    _html("<table border=\"0\"><tr>");
+    my $pi = 1/$ok_hours;
+	my $percentstr = sprintf("%.1f", $pi * 100);
+	my $lines_per_hour = int($pi*$n);
+
+    for ($b = 0; $b < 24; $b++) {
+        if (defined($output{$b})) {
+        	my $image = "pic_v_".(int($b/6)*6);
+        	$image = $self->{cfg}->{$image};
+
+            _html("<td align=\"center\" valign=\"bottom\" class=\"asmall\">$percentstr%<br /><img src=\"$self->{cfg}->{piclocation}/$image\" width=\"15\" height=\"100\" alt=\"$lines_per_hour\" title=\"$lines_per_hour\"/></td>");
+        } else {
+        	_html("<td align=\"center\" valign=\"bottom\" class=\"asmall\">0.0%<br /></td>");
+        }
+    }
+
+    _html("</tr><tr>");
+
+    for ($b = 0; $b < 24; $b++) {
+        # Highlight the top time
+        my $class = 'rankc10center';
+        _html("<td class=\"$class\" align=\"center\">$b</td>");
+    }
+
+    _html("</tr></table>");
+
+    if($self->{cfg}->{showlegend} == 1) {
+        $self->_legend();
+    }
+    
+    $self->_activetimes_poissondist();
+}
+
+sub _activetimes_poissondist
+{
+    # The most estimated actives times on the channel
+    my $self = shift;
+
+    my (%output);
+	
+	# FIXME: $self->_headline($self->_template_text('activetimestopic'));
+	$self->_headline("Estimated active times (Poisson distribution)");
+
+	my $xi = 0;
+	my $n = 0; 
+
+    for my $hour (sort keys %{ $self->{stats}->{times} }) {
+		$xi += $self->{stats}->{times}{$hour}*$hour;
+		$n += $self->{stats}->{times}{$hour};
+    }
+    
+    my $lambda = $xi/$n;  
+    my $highest_poisson = _poisson(int($lambda), $lambda)*$n;
+    
+    for ($b = 0; $b < 24; $b++) {
+		my $hour = $b;
+		if($b == 0) { $b = 24; } # HACK: 00:00 -> 24:00
+		
+    	my $prob = _poisson($b, $lambda);
+      	my $xipi = int($prob * $n);
+    	my $size = int(($xipi / $highest_poisson)*100);
+
+        my $percent = sprintf("%.1f", $prob * 100);
+
+        my $image = "pic_v_".(int($hour/6)*6);
+        $image = $self->{cfg}->{$image};
+
+        $output{$hour} = "<td align=\"center\" valign=\"bottom\" class=\"asmall\">$percent%<br /><img src=\"$self->{cfg}->{piclocation}/$image\" width=\"15\" height=\"$size\" alt=\"$xipi\" title=\"$xipi\"/></td>" if $size;
+		
+		if($b == 24) { $b = 0; } # HACK: 00:00 -> 24:00
+	}
+
+    _html("<table border=\"0\"><tr>");
+
+    for ($b = 0; $b < 24; $b++) {
+        if (!defined($output{$b})) {
+            _html("<td align=\"center\" valign=\"bottom\" class=\"asmall\">0%</td>");
+        } else {
+            _html($output{$b});
+        }
+    }
+
+    _html("</tr><tr>");
+
+    for ($b = 0; $b < 24; $b++) {
+        # Highlight the top time
+        # FIXME: my $class = $toptime[0] == $b ? 'hirankc10center' : 'rankc10center';
+        my $class = "rankc10center";
+		_html("<td class=\"$class\" align=\"center\">$b</td>");
+    }
+
+    _html("</tr></table>");
+
+    if($self->{cfg}->{showlegend} == 1) {
+        $self->_legend();
+    }
+
 }
 
 sub _activenicks
@@ -2562,6 +2699,23 @@ sub _activegenders {
     }
 
     _html("</tr></table>");
+}
+
+sub factorial {
+    my $n = shift;
+    my $f = 1;
+    $f *= $n-- while $n > 0;    # Multiply, then decrement
+    return $f;
+}
+
+sub _poisson {
+	my $x = shift;
+	my $lambda = shift;
+	
+	my $minlambda = 1/(E ** $lambda);
+	my $lambdadivnexc = ($lambda ** $x)/factorial($x);
+	
+	return $minlambda*$lambdadivnexc;
 }
 
 # Copypasted from Statistics::Distribution
