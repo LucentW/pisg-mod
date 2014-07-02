@@ -626,11 +626,10 @@ sub _activetimes_uniformdist
     for my $hour (sort keys %{ $self->{stats}->{times} }) {
         my $percent = ($self->{stats}->{times}{$hour} / $self->{stats}->{parsedlines}) * 100;
 		
-		if ($percent > $lowest_percentage) {
+		if ($percent >= $lowest_percentage) {
 			$ok_hours++;
-        	$output{$ctr} = "k";
+        	$output{$hour} = "k";
     	}
-    	$ctr++;
     }
 
     _html("<table border=\"0\"><tr>");
